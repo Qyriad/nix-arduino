@@ -40,40 +40,11 @@
           version = "0.0.0";
         };
 
-        _fetchArduinoIndex = { url, sha256 }:
+        mkIndexPackages = indexAttrs:
           let
-            inherit (builtins) match fetchurl foldl' compareVersions filter;
+            attrs = indexAttrs;
 
-            indexRawStem = match ''^.+/([A-Za-z0-9_\-]+)\.json$'' url;
-            # FIXME: assert match doesn't fail.
-            indexName = replaceStrings [ "_" ] [ "-" ] (head indexRawStem);
-
-          in
-            pkgs.stdenv.mkDerivation {
-              # There isn't any meaningful version we can assign here.
-              name = "arduino-${indexName}";
-
-              src = fetchurl {
-                inherit url sha256;
-              };
-
-              dontUnpack = true;
-              dontConfigure = true;
-              dontBuild = true;
-
-              installPhase = ''
-                mkdir -p $out
-                cp $src $out/${indexName}
-                ln -sr $out/${indexName} $out/index.json
-              '';
-            }
-        ; # fetchFromArduinoIndex
-
-        mkIndexPackages = index:
-          let
-            attrs = builtins.fromJSON (builtins.readFile "${index}/index.json");
-
-            packageNames = lib.lists.forEach attrs.packages (package: package.name);
+            packageNames = lib.lists.forEach indexAttrs.packages (package: package.name);
 
             mkPackage = packageName:
               let
@@ -81,7 +52,7 @@
                   lib.lists.findFirst
                     (package: package.name == packageName)
                     (throw "Unreachable")
-                    attrs.packages
+                    indexAttrs.packages
                 ;
 
                 packagePlatformArches =
@@ -147,12 +118,39 @@
 
         fetchArduinoIndex = { url, sha256 }:
           let
-            fetchedIndex = _fetchArduinoIndex { inherit url sha256; };
+            inherit (builtins) match fetchurl foldl' compareVersions filter;
+
+            indexRawStem = match ''^.+/([A-Za-z0-9_\-]+)\.json$'' url;
+            # FIXME: assert match doesn't fail.
+            indexName = replaceStrings [ "_" ] [ "-" ] (head indexRawStem);
+
+            drv = pkgs.stdenv.mkDerivation {
+              # There isn't any meaningful version we can assign here.
+              name = "arduino-${indexName}";
+
+              src = fetchurl {
+                inherit url sha256;
+              };
+
+              dontUnpack = true;
+              dontConfigure = true;
+              dontBuild = true;
+
+              installPhase = ''
+                mkdir -p $out
+                cp $src $out/${indexName}
+                ln -sr $out/${indexName} $out/index.json
+              '';
+            };
+
+            attrs = builtins.fromJSON ((builtins.readFile "${drv}/index.json"));
+
           in {
-            attrs = builtins.fromJSON (builtins.readFile "${fetchedIndex}/index.json");
-            packages = mkIndexPackages fetchedIndex;
+            inherit drv attrs;
+            packages = mkIndexPackages attrs;
           }
-        ;
+        ; # fetchFromArduinoIndex
+
 
         adafruit = fetchArduinoIndex {
           url = "https://adafruit.github.io/arduino-board-index/package_adafruit_index.json";
@@ -166,6 +164,7 @@
 
       in {
         packages.default = adafruitPlatforms;
+        platforms = adafruit;
       }
     )
   ;
