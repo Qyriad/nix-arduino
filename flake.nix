@@ -23,19 +23,6 @@
 
         # HACK: some things are still specified with MD5, so this set here will indicate what
         # MD5 hashes to replace, which will need to be manually updated.
-        hashReplacements = {
-          #"fe0029de4f4ec43cf7008944e34ff8cc" = "0yhp3ps4zv433qkjb6vskiy3mvxjj1wgds9qjqklkgym77w41n5w";
-          #
-          ## gcc-arm-none-eabi-5_2-2015q4-20151219-linux.tar.bz2
-          #"f88caac80b4444a17344f57ccb760b90" = "12mbwl9iwbw7h6gwwkvyvfmrsz7vgjz27jh2cz9z006ihzigi50y";
-          #
-          ## gcc-5_2-2015q4/nrfjprog-9.4.0-linux64.tar.bz2
-          #"da3c7b348e0c22766f175a4a9cca0d19" = "0sg7sibdl1qdbikskn38sya6jv4yq0ma0dvnsxbcvzsar7i71129";
-          #
-          ## wiced_dfu-1.0.0-linux64.tar.gz
-          #"ae36e3e3a35ac507955a3ee4f18e4bb7" = "02g9ck29c2bkqf70nhlmmpxgw4qz7m37li2zg7m7b8pgdzd7psmb";
-        };
-
         systemDoubleFromString = string:
           let
             inherit (pkgs.lib.systems.parse) mkSystemFromString doubleFromSystem;
@@ -48,33 +35,11 @@
             if result.success then result.value else null
         ;
 
-        mkChecksum = checksumString:
-          let
-            inherit (builtins) hasAttr;
-            matchingChecksum = lib.lists.findFirst
-              (checksumKind: lib.strings.hasPrefix checksumKind.prefix checksumString)
-              (throw "Unknown checksum prefix in ${checksumString}")
-              checksumKinds
-            ;
-
-            #value = lib.strings.removePrefix matchingChecksum.prefix checksumString;
-            value = lib.strings.replaceStrings
-              [ "SHA-256:" "MD5:" ]
-              [ "sha256-" "md5-" ]
-              checksumString
-            ;
-
-            replacement = if matchingChecksum.kind == "md5" && (hasAttr value hashReplacements) then
-                hashReplacements.${value}
-              else
-                null
-            ;
-          in {
-            kind = if replacement != null then "sha256" else matchingChecksum.kind;
-            value = trace (if replacement != null then replacement else value);
-          }
-        ;
-
+        # HACK: fetchurl doesn't accept MD5s, but it does accept SRIs from MD5s.
+        # And make things easier, we'll just use SRIs for other hashes too.
+        # But as far as I can tell, nixpkgs doesn't have a library function to calculate
+        # SRIs. The Nix command does, though, so let's create a derivation that runs the Nix
+        # command to calculate the SRI hash.
         mkHash = checksumString:
           let
             newString = lib.strings.replaceStrings
@@ -83,12 +48,12 @@
               checksumString
             ;
 
-            sriDrv = pkgs.runCommand "sri-hash-${newString}" { } ''
+            sri = pkgs.runCommand "sri-hash-${newString}" { } ''
               mkdir $out
               ${pkgs.nix}/bin/nix --experimental-features nix-command --offline hash to-sri "${newString}" > $out/hash
             '';
           in
-            (builtins.readFile "${sriDrv}/hash")
+            (builtins.readFile "${sri}/hash")
         ;
 
         latestVersion = lhs: rhs: if (compareVersions lhs.version rhs.version) == 1 then lhs else rhs;
@@ -159,50 +124,14 @@
                     (tool: lib.attrsets.nameValuePair tool.name tool)
                 );
 
-                #mkSystemTool = toolAttrs:
-                #  lib.lists.forEach
-                #    toolAttrs.systems
-                #    (tool: (lib.attrsets.nameValuePair (systemDoubleFromString tool.host tool)) // { inherit (toolAttrs) name version; } )
-                #;
-                #
-                #toolsBySystem =
-                #  lib.lists.forEach
-                #    packageAttrs.tools
-                #    (tool: mkSystemTool tool)
-                #;
-                #
-                #toolsForHost =
-                #  filter
-                #    (tool: hasAttr system (trace tool)
-                #    toolsBySystem
-                #;
-                #
-                #toolsForHostByName =
-                #  lib.lists.forEach
-                #    (tool: lib.attrsets.nameValuePair (tool.name tool))
-                #    toolsForHost
-                #;
-
-                #toolsByNameAndSystem =
-                #  lib.lists.forEach
-                #    packageAttrs.tools
-                #    (toolAttrs: lib.attrsets.nameValuePair toolAttrs.name (mkSystemTool toolAttrs))
-                #;
-
                 mkPlatform = { platformName, version, url, checksum, architecture }:
                   let
                     outPath = "${packageName}/hardware/${architecture}/${version}";
                     # FIXME: comment
-                    builtChecksum = mkChecksum checksum;
                   in
                     pkgs.stdenv.mkDerivation {
                       pname = "arduino-${packageName}-${platformName}";
                       inherit version;
-
-                      #src = fetchurl {
-                      #  inherit url;
-                      #  "${builtChecksum.kind}" = builtChecksum.value;
-                      #};
 
                       src = fetchurl {
                         inherit url;
@@ -221,26 +150,10 @@
 
                 mkTool = { toolName, version, url, checksum, host }:
                   let outPath = "${packageName}/tools/${toolName}/${version}";
-                  # FIXME: comment
-                  builtChecksum = mkChecksum checksum;
-                  #builtChecksum = if _builtChecksum.kind == "md5"
-                  #  then
-                  #    throw "${url} uses MD5 hash; add sha256 hash to hashReplacements attrset for ${_builtChecksum.value} at the top of this file"
-                  #  else
-                  #    _builtChecksum
-                  #;
-
-                  fetcher = if lib.hasSuffix ".zip" url then pkgs.fetchzip else builtins.fetchurl;
                 in
                   pkgs.stdenv.mkDerivation {
                     pname = "arduino-${packageName}-${toolName}";
                     inherit version;
-
-                    #src = fetcher {
-                    #  inherit url;
-                    #  #"${builtChecksum.kind}" = builtins.trace "${toolName}-${version}" builtChecksum.value;
-                    #  hash = builtChecksum.value;
-                    #};
 
                     src = fetchurl {
                       inherit url;
