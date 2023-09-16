@@ -40,29 +40,13 @@
           version = "0.0.0";
         };
 
-        mkPname = prettyName: "arduino-" + (replaceStrings
-          [ " " ]
-          [ "-" ]
-          (lib.strings.toLower prettyName)
-        );
-
-        # Returns a set containing the Arduino index derivation as `.drv`, and the resulting attrs as `.attrs`.
-        fetchArduinoIndex = { url, sha256 }:
+        _fetchArduinoIndex = { url, sha256 }:
           let
             inherit (builtins) match fetchurl foldl' compareVersions filter;
 
             indexRawStem = match ''^.+/([A-Za-z0-9_\-]+)\.json$'' url;
             # FIXME: assert match doesn't fail.
             indexName = replaceStrings [ "_" ] [ "-" ] (head indexRawStem);
-
-            #mkPackages = indexAttrs:
-            #  lib.lists.forEach
-            #    indexAttrs.packages
-            #    (packagesAttrs: {
-            #      name = packagesAttrs.name;
-            #    })
-            #;
-
 
           in
             pkgs.stdenv.mkDerivation {
@@ -89,7 +73,7 @@
           let
             attrs = builtins.fromJSON (builtins.readFile "${index}/index.json");
 
-            packageNames = traceSeq (lib.lists.forEach attrs.packages (package: package.name));
+            packageNames = lib.lists.forEach attrs.packages (package: package.name);
 
             mkPackage = packageName:
               let
@@ -103,8 +87,8 @@
                 packagePlatformArches =
                   lib.lists.unique (
                     lib.lists.forEach
-                      (traceType packageAttrs.platforms)
-                      (plat: trace plat.architecture)
+                      packageAttrs.platforms
+                      (plat: plat.architecture)
                   )
                 ;
 
@@ -157,193 +141,31 @@
               }
             ; # mkPackage
 
+          in
+            lib.attrsets.genAttrs packageNames mkPackage
+        ; # mkIndexPackages
+
+        fetchArduinoIndex = { url, sha256 }:
+          let
+            fetchedIndex = _fetchArduinoIndex { inherit url sha256; };
           in {
-            packages = lib.attrsets.genAttrs packageNames mkPackage;
+            attrs = builtins.fromJSON (builtins.readFile "${fetchedIndex}/index.json");
+            packages = mkIndexPackages fetchedIndex;
           }
         ;
 
-
-
-
-
-            #  attrs = builtins.fromJSON (builtins.readFile "${drv}/index.json");
-            #
-            #  packages =
-            #    let
-            #      packageNames = lib.lists.forEach attrs.packages (package: package.name);
-            #
-            #      mkPackage = packageName:
-            #        let
-            #          packageAttrs = lib.lists.findFirst (package: package.name == packageName);
-            #
-            #          packagePlatformArches =
-            #            lib.lists.unique (lib.lists.forEach packageAttrs.platforms) (plat: plat.architecture)
-            #          ;
-            #
-            #          # Get the latest platform for each architecture.
-            #          latestPlatformsAttrs =
-            #            lib.lists.forEach
-            #              packagePlatformArches
-            #              (arch:
-            #                foldl'
-            #                  latestVersion
-            #                  dummyPlatformVersion
-            #                  (filter (plat: plat.architecture == arch) packageAttrs.platforms)
-            #              )
-            #          ;
-            #
-            #          mkPlatform = { platformName, version, url, checksum, architecture }:
-            #            let
-            #              outPath = "${packageName}/hardware/${architecture}/${version}";
-            #              # FIXME: comment
-            #              builtChecksum = mkChecksum checksum;
-            #            in
-            #              pkgs.stdenv.mkDerivation {
-            #                pname = platformName;
-            #                inherit version;
-            #
-            #                src = fetchurl {
-            #                  inherit url;
-            #                  "${builtChecksum.kind}" = builtChecksum.value;
-            #                };
-            #
-            #                dontConfigure = true;
-            #                dontBuild = true;
-            #
-            #                installPhase = ''
-            #                  mkdir -p "$out/${outPath}"
-            #                  cp -r ./* "$out/${outPath}/";
-            #                '';
-            #              }
-            #          ;
-            #        in {
-            #          name = packageName;
-            #          platforms = lib.lists.forEach
-            #            latestPlatformsAttrs
-            #            (platformAttrs: mkPlatform {
-            #              platformName = platformAttrs.name;
-            #              inherit (platformAttrs) version url checksum architecture;
-            #            })
-            #          ;
-            #        }
-            #      ; # mkPackage
-            #    in
-            #      lib.attrsets.genAttrs
-            #        packageNames
-            #        mkPackage
-            #  ; # packages
-            #}
-            #
-        #; # fetchFromArduinoIndex
-
-        #buildArduinoPlatform = { pname, version, vendor, url, checksum, architecture }:
-        #  let
-        #    outPath = "${vendor}/hardware/${architecture}/${version}";
-        #    builtChecksum = mkChecksum (lib.traceSeq [ url checksum ] checksum);
-        #  in
-        #    pkgs.stdenv.mkDerivation {
-        #      inherit pname version;
-        #
-        #      src = fetchurl {
-        #        inherit url;
-        #        "${builtChecksum.kind}" = (builtins.trace builtChecksum.kind) builtChecksum.value;
-        #      };
-        #
-        #      dontConfigure = true;
-        #      dontBuild = true;
-        #
-        #      installPhase = ''
-        #        echo "Installing ${pname}!"
-        #        mkdir -p "$out/${outPath}"
-        #        cp -r ./* "$out/${outPath}/"
-        #      '';
-        #  }
-        #;
-        #
-        #adafruit_index = pkgs.stdenv.mkDerivation {
-        #  name = "arduino-adafruit-index";
-        #
-        #  src = fetchurl {
-        #    url = "https://adafruit.github.io/arduino-board-index/package_adafruit_index.json";
-        #    sha256 = "0dsxql1lw6c6yhdsmdynvqs342vxlc0h553xbcdc4zjhknv7p5jh";
-        #  };
-        #
-        #  dontUnpack = true;
-        #  dontBuild = true;
-        #
-        #  installPhase = ''
-        #    mkdir -p $out
-        #    cp $src $out/package_adafruit_index.json
-        #  '';
-        #};
-        #
-        #adafruitIndex = builtins.fromJSON (builtins.readFile "${adafruit_index}/package_adafruit_index.json");
-        #
-        #adafruitPackages = lib.lists.findSingle
-        #  (package: package.name == "adafruit")
-        #  (throw "Adafruit package not found")
-        #  (throw "Multiple Adafruit packages found")
-        #  adafruitIndex.packages
-        #;
-        #
-        #architectures =
-        #  lib.lists.unique
-        #    # unique: list to operate on
-        #    (lib.lists.forEach
-        #      # forEach: list to operate on
-        #      (traceType adafruitPackages.platforms)
-        #      # forEach: operation
-        #      (platform: platform.architecture)
-        #  )
-        #;
-        #
-        ## Get the latest version for each architecture.
-        #latestPlatformsInfo =
-        #  lib.lists.forEach
-        #    # forEach: list to operator on
-        #    architectures
-        #    # forEach: operation
-        #    (arch:
-        #      foldl'
-        #        # foldl': op
-        #        (lhs: rhs: if (compareVersions lhs.version rhs.version) == 1 then lhs else rhs)
-        #        # foldl': first arg
-        #        ({ version = "0.0.0"; })
-        #        # foldl': list to operate on
-        #        (filter (plat: plat.architecture == arch) adafruitPackages.platforms)
-        #    )
-        #;
-        #
-        #eachPlatform = lib.lists.forEach
-        #  latestPlatformsInfo
-        #  (plat: buildArduinoPlatform {
-        #    inherit (plat) checksum architecture url version;
-        #    pname = plat.name;
-        #    vendor = "adafruit";
-        #  })
-        #;
-        #
-        #allPlatforms = pkgs.symlinkJoin {
-        #  name = "arduino-adafruit-platforms";
-        #  paths = eachPlatform;
-        #};
-        #
-        index = fetchArduinoIndex {
+        adafruit = fetchArduinoIndex {
           url = "https://adafruit.github.io/arduino-board-index/package_adafruit_index.json";
           sha256 = "0dsxql1lw6c6yhdsmdynvqs342vxlc0h553xbcdc4zjhknv7p5jh";
         };
 
-        adindex = mkIndexPackages index;
-
-        adafruit = pkgs.symlinkJoin {
+        adafruitPlatforms = pkgs.symlinkJoin {
           name = "adafruit";
-          paths = adindex.packages.adafruit.platforms;
+          paths = adafruit.packages.adafruit.platforms;
         };
 
-        #adafruit = mkIndexPackages index;
-
       in {
-        packages.default = adafruit;
+        packages.default = adafruitPlatforms;
       }
     )
   ;
