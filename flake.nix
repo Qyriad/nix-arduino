@@ -9,7 +9,7 @@
       let
         pkgs = import nixpkgs { inherit system; };
 
-        inherit (builtins) fetchurl head substring stringLength replaceStrings foldl' filter compareVersions;
+        inherit (builtins) fetchurl head substring stringLength replaceStrings foldl' filter compareVersions listToAttrs;
         inherit (pkgs) lib;
 
         trace = arg: builtins.trace arg arg;
@@ -75,6 +75,13 @@
                     )
                 ;
 
+                # And index by architecture.
+                platformsByArch = listToAttrs (
+                  lib.lists.forEach
+                    latestPlatformsAttrs
+                    (plat: lib.attrsets.nameValuePair plat.architecture plat)
+                );
+
                 mkPlatform = { platformName, version, url, checksum, architecture }:
                   let
                     outPath = "${packageName}/hardware/${architecture}/${version}";
@@ -102,12 +109,12 @@
 
               in {
                 name = packageName;
-                platforms = lib.lists.forEach
-                  latestPlatformsAttrs
-                  (platformAttrs: mkPlatform {
-                    platformName = platformAttrs.name;
-                    inherit (platformAttrs) version url checksum architecture;
+                platforms = lib.attrsets.mapAttrs
+                  (name: value: mkPlatform {
+                    platformName = name;
+                    inherit (value) version url checksum architecture;
                   })
+                  platformsByArch
                 ;
               }
             ; # mkPackage
@@ -159,7 +166,7 @@
 
         adafruitPlatforms = pkgs.symlinkJoin {
           name = "adafruit";
-          paths = adafruit.packages.adafruit.platforms;
+          paths = lib.attrsets.mapAttrsToList (name: value: value) adafruit.packages.adafruit.platforms;
         };
 
       in {
