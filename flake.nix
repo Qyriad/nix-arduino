@@ -16,6 +16,8 @@
         traceSeq = arg: lib.debug.traceSeq arg arg;
         traceType = arg: builtins.trace (builtins.typeOf arg) arg;
 
+        attrsToList = attrs: lib.attrsets.mapAttrsToList (name: value: value) attrs;
+
         checksumKinds = [
           ({ prefix = "SHA-256:"; kind = "sha256"; })
           ({ prefix = "MD5:"; kind = "md5"; })
@@ -55,6 +57,20 @@
           in
             (builtins.readFile "${sri}/hash")
         ;
+
+        # Create a version of atool that can unpack most things.
+        aunpack = pkgs.symlinkJoin {
+          name = "advancedUnpacker";
+          paths = with pkgs; [
+            atool
+            unzip
+            gnutar
+            xz
+            gzip
+            bzip2
+            bzip3
+          ];
+        };
 
         latestVersion = lhs: rhs: if (compareVersions lhs.version rhs.version) == 1 then lhs else rhs;
 
@@ -138,6 +154,14 @@
                         hash = mkHash checksum;
                       };
 
+                      # HACK: fetchurl doesn't know how to unpack zip files, but
+                      # fetchzip hashes *after* unpack. Also, some of these archives have
+                      # a root folder and some don't. Let's just use aunpack to normalize it all.
+                      unpackCmd = ''
+                        export PATH="$PATH:${aunpack}/bin"
+                        aunpack $src
+                      '';
+
                       dontConfigure = true;
                       dontBuild = true;
 
@@ -161,9 +185,12 @@
                     };
 
                     # HACK: fetchurl doesn't know how to unpack zip files, but
-                    # fetchzip hashes *after* unpack. So if we have a zip file, then unpack that
-                    # manually.
-                    unpackCmd = if lib.hasSuffix ".zip" url then "${pkgs.unzip}/bin/unzip $src" else null;
+                    # fetchzip hashes *after* unpack. Also, some of these archives have
+                    # a root folder and some don't. Let's just use aunpack to normalize it all.
+                    unpackCmd = ''
+                      export PATH="$PATH:${aunpack}/bin"
+                      aunpack $src
+                    '';
                     dontConfigure = true;
                     dontBuild = true;
 
@@ -234,6 +261,11 @@
         ; # fetchFromArduinoIndex
 
 
+        arduino = fetchArduinoIndex {
+          url = "https://downloads.arduino.cc/packages/package_index.json";
+          sha256 = "2793dbf068ec2d3b86c060e42a8f5a2faa6a61c799481bb1b9ff20989cbd938e";
+        };
+
         adafruit = fetchArduinoIndex {
           url = "https://adafruit.github.io/arduino-board-index/package_adafruit_index.json";
           sha256 = "0dsxql1lw6c6yhdsmdynvqs342vxlc0h553xbcdc4zjhknv7p5jh";
@@ -244,9 +276,25 @@
           paths = (lib.attrsets.mapAttrsToList (name: value: value) adafruit.packages.adafruit.platforms) ++ (lib.attrsets.mapAttrsToList (name: value: value) adafruit.packages.adafruit.tools);
         };
 
+        arduinoPackages = pkgs.symlinkJoin {
+          name = "arduinoPackages";
+          paths = (attrsToList arduino.packages.arduino.platforms) ++ (attrsToList arduino.packages.arduino.tools) ++ (attrsToList arduino.packages.builtin.tools);
+        };
+
+        both = pkgs.symlinkJoin {
+          name = "arduino-multi";
+          paths = [
+            adafruitPlatforms
+            arduinoPackages
+          ];
+        };
+
       in {
-        packages.default = adafruitPlatforms;
-        platforms = adafruit;
+        packages.default = both;
+        platforms = {
+          inherit adafruit;
+          inherit arduino;
+        };
       }
     )
   ;
