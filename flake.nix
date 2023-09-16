@@ -50,7 +50,7 @@
 
             sri = pkgs.runCommand "sri-hash-${newString}" { } ''
               mkdir $out
-              ${pkgs.nix}/bin/nix --experimental-features nix-command --offline hash to-sri "${newString}" > $out/hash
+              ${pkgs.nix}/bin/nix-hash --to-sri "${newString}" > $out/hash
             '';
           in
             (builtins.readFile "${sri}/hash")
