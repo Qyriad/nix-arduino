@@ -225,6 +225,13 @@
             lib.attrsets.genAttrs packageNames mkPackage
         ; # mkIndexPackages
 
+        # Creates a derivation to fetch an Arduino index JSON file from the specified URL,
+        # and populates an attrset with the results of the JSON file. This function returns an attrset
+        # with the derivation in `.drv`, the JSON result attributes in `.attrs`, and attrsets representing the
+        # packages described in this index as `.packages`.
+        # The derivation has two outputs. `out`, as a directory containing only the index JSON file as it
+        # was originally named (suitable for merging/symlinking with other Arduino packages to create an Arduino
+        # data directory environment), and `index`, the JSON file as a single-file output.
         fetchArduinoIndex = { url, sha256 }:
           let
             inherit (builtins) match fetchurl foldl' compareVersions filter;
@@ -241,6 +248,8 @@
                 inherit url sha256;
               };
 
+              outputs = [ "out" "index" ];
+
               dontUnpack = true;
               dontConfigure = true;
               dontBuild = true;
@@ -248,11 +257,11 @@
               installPhase = ''
                 mkdir -p $out
                 cp $src $out/${indexName}
-                ln -sr $out/${indexName} $out/index.json
+                cp $src $index
               '';
             };
 
-            attrs = builtins.fromJSON ((builtins.readFile "${drv}/index.json"));
+            attrs = builtins.fromJSON (builtins.readFile drv.index);
 
             packages = mkIndexPackages attrs;
 
@@ -315,6 +324,6 @@
           inherit arduinoIndex;
         };
       }
-    )
+    ) # eachDefaultSystem
   ;
 }
