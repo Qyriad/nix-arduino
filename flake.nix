@@ -62,7 +62,14 @@
           '';
         };
 
-        latestVersion = lhs: rhs: if (compareVersions lhs.version rhs.version) == 1 then lhs else rhs;
+        # Returns the argument whose `.version` compares higher with `builtins.compareVersions`.
+        latestVersionOf =
+          # Attrset containing a `.version` attribute.
+          lhs:
+          # Attrset containing a `.version` attribute.
+          rhs:
+            if (compareVersions lhs.version rhs.version) == 1 then lhs else rhs
+        ;
 
         dummyPlatformVersion = {
           version = "0.0.0";
@@ -97,7 +104,7 @@
                     packagePlatformArches
                     (arch:
                       foldl'
-                        latestVersion
+                        latestVersionOf
                         dummyPlatformVersion
                         (filter (plat: plat.architecture == arch) packageAttrs.platforms)
                     )
