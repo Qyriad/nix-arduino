@@ -62,18 +62,33 @@
           '';
         };
 
-        # Returns the argument whose `.version` compares higher with `builtins.compareVersions`.
-        latestVersionOf =
-          # Attrset containing a `.version` attribute.
-          lhs:
-          # Attrset containing a `.version` attribute.
-          rhs:
-            if (compareVersions lhs.version rhs.version) == 1 then lhs else rhs
-        ;
 
-        dummyPlatformVersion = {
-          version = "0.0.0";
-        };
+        # Returns the list item whose `.version` compares highest with `builtins.compareVersions`.
+        latestVersionOfList =
+          # List of attrsets that have a `.version` attribute.
+          list:
+            let
+              inherit (builtins) compareVersions foldl';
+
+              # Returns the argument whose `.version` compares higher with `builtins.compareVersions`.
+              latestVersionOf =
+                # Attrset containing a `.version` attribute.
+                lhs:
+                # Attrset containing a `.version` attribute.
+                rhs:
+                  if compareVersions lhs.version rhs.version == 1 then lhs else rhs
+              ;
+
+              # Used as the first argument of foldl'.
+              dummyVersion = {
+                version = "0.0.0";
+              };
+            in
+              foldl'
+                latestVersionOf # Comparator
+                dummyVersion # Initial value
+                list # List to operate on.
+        ;
 
         mkIndexPackages = indexAttrs:
           let
@@ -103,10 +118,7 @@
                   lib.lists.forEach
                     packagePlatformArches
                     (arch:
-                      foldl'
-                        latestVersionOf
-                        dummyPlatformVersion
-                        (filter (plat: plat.architecture == arch) packageAttrs.platforms)
+                      latestVersionOfList (filter (plat: plat.architecture == arch) packageAttrs.platforms)
                     )
                 ;
 
