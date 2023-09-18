@@ -51,18 +51,15 @@
             (builtins.readFile "${sri}/hash")
         ;
 
-        # Create a version of atool that can unpack most things.
-        aunpack = pkgs.symlinkJoin {
-          name = "advancedUnpacker";
-          paths = with pkgs; [
-            atool
-            unzip
-            gnutar
-            xz
-            gzip
-            bzip2
-            bzip3
-          ];
+        # Create a version of atool that has enough in its PATH to be able to unpack most things.
+        aunpackFull = pkgs.writeShellApplication {
+          name = "aunpack-full";
+          runtimeInputs = builtins.attrValues {
+            inherit (pkgs) atool unzip gnutar xz gzip bzip2 bzip3;
+          };
+          text = ''
+            exec ${pkgs.atool}/bin/aunpack "$@"
+          '';
         };
 
         latestVersion = lhs: rhs: if (compareVersions lhs.version rhs.version) == 1 then lhs else rhs;
@@ -150,8 +147,7 @@
                       # fetchzip hashes *after* unpack. Also, some of these archives have
                       # a root folder and some don't. Let's just use aunpack to normalize it all.
                       unpackCmd = ''
-                        export PATH="$PATH:${aunpack}/bin"
-                        aunpack $src
+                        ${aunpackFull}/bin/aunpack-full $src
                       '';
                       dontConfigure = true;
                       dontBuild = true;
@@ -190,8 +186,7 @@
                       # fetchzip hashes *after* unpack. Also, some of these archives have
                       # a root folder and some don't. Let's just use aunpack to normalize it all.
                       unpackCmd = ''
-                        export PATH="$PATH:${aunpack}/bin"
-                        aunpack $src
+                        ${aunpackFull}/bin/aunpack-full $src
                       '';
 
                       dontConfigure = true;
