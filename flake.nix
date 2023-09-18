@@ -9,52 +9,49 @@
       let
         pkgs = import nixpkgs { inherit system; };
 
-        inherit (builtins) head substring stringLength replaceStrings foldl' filter compareVersions listToAttrs hasAttr;
+        inherit (builtins) attrValues;
         inherit (pkgs) lib fetchurl fetchzip;
-
-        trace = arg: builtins.trace arg arg;
-        traceSeq = arg: lib.debug.traceSeq arg arg;
-        traceType = arg: builtins.trace (builtins.typeOf arg) arg;
-
-        attrsToList = attrs: lib.attrsets.mapAttrsToList (name: value: value) attrs;
 
         systemDoubleFromString = string:
           let
+            inherit (builtins) typeOf tryEval;
             inherit (pkgs.lib.systems.parse) mkSystemFromString doubleFromSystem;
+
             result =
-              assert (builtins.typeOf string == "string");
-              builtins.tryEval
+              assert lib.asserts.assertMsg (typeOf string == "string") "system ${string} is not a string";
+              tryEval
                 (doubleFromSystem (mkSystemFromString string))
             ;
           in
+             #In this case, ignore system strings we don't understand, as they're things like "i686-mingw32".
             if result.success then result.value else null
         ;
 
         # HACK: fetchurl doesn't accept MD5s, but it does accept SRIs from MD5s.
-        # And make things easier, we'll just use SRIs for other hashes too.
+        # And to make things easier, we'll just use SRIs for other hashes too.
         # But as far as I can tell, nixpkgs doesn't have a library function to calculate
-        # SRIs. The Nix command does, though, so let's create a derivation that runs the Nix
+        # SRIs. There's a CLI for it, though, so let's create a derivation that runs that
         # command to calculate the SRI hash.
-        mkHash = checksumString:
+        mkSriHash = checksumString:
           let
-            newString = lib.strings.replaceStrings
+            normalizedHashDescriptor = builtins.replaceStrings
               [ "SHA-256:" "MD5:" ]
               [ "sha256:" "md5:" ]
               checksumString
             ;
 
-            sri = pkgs.runCommand "sri-hash-${newString}" { } ''
+            sri = pkgs.runCommand "sri-hash-${normalizedHashDescriptor}" { } ''
               mkdir $out
-              ${pkgs.nix}/bin/nix-hash --to-sri "${newString}" > $out/hash
+              ${pkgs.nix}/bin/nix-hash --to-sri "${normalizedHashDescriptor}" > $out/hash
             '';
           in
-            (builtins.readFile "${sri}/hash")
+            builtins.readFile "${sri}/hash"
         ;
 
         # Create a version of atool that has enough in its PATH to be able to unpack most things.
         aunpackFull = pkgs.writeShellApplication {
           name = "aunpack-full";
-          runtimeInputs = builtins.attrValues {
+          runtimeInputs = attrValues {
             inherit (pkgs) atool unzip gnutar xz gzip bzip2 bzip3;
           };
           text = ''
@@ -98,6 +95,8 @@
 
             mkPackage = packageName:
               let
+                inherit (builtins) filter listToAttrs;
+
                 packageAttrs =
                   lib.lists.findFirst
                     (package: package.name == packageName)
@@ -159,7 +158,7 @@
 
                       src = fetchurl {
                         inherit url;
-                        hash = mkHash checksum;
+                        hash = mkSriHash checksum;
                       };
 
                       # HACK: fetchurl doesn't know how to unpack zip files, but
@@ -198,7 +197,7 @@
 
                       src = fetchurl {
                         inherit url;
-                        hash = mkHash checksum;
+                        hash = mkSriHash checksum;
                       };
 
                       # HACK: fetchurl doesn't know how to unpack zip files, but
@@ -248,7 +247,7 @@
         # data directory environment), and `index`, the JSON file as a single-file output.
         fetchArduinoIndex = { url, sha256 }:
           let
-            inherit (builtins) match fetchurl foldl' compareVersions filter;
+            inherit (builtins) match replaceStrings head fetchurl foldl' compareVersions filter;
 
             indexRawStem = match ''^.+/([A-Za-z0-9_\-]+)\.json$'' url;
             # FIXME: assert match doesn't fail.
@@ -285,16 +284,16 @@
             allPlatforms =
               lib.lists.flatten (
                 lib.lists.forEach
-                  (attrsToList packages)
-                  (package: attrsToList package.platforms)
+                  (attrValues packages)
+                  (package: attrValues package.platforms)
               )
             ;
 
             allTools =
               lib.lists.flatten (
                 lib.lists.forEach
-                  (attrsToList packages)
-                  (package: attrsToList package.tools)
+                  (attrValues packages)
+                  (package: attrValues package.tools)
               )
             ;
           }
@@ -325,9 +324,9 @@
               adafruit.tools.bossac
               arduino.tools.bossac
               arduino.tools.openocd
-              adafruit.tools."CMSIS"
-              adafruit.tools."CMSIS-Atmel"
-              arduino.tools."arduinoOTA"
+              adafruit.tools.CMSIS
+              adafruit.tools.CMSIS-Atmel
+              arduino.tools.arduinoOTA
             ];
         };
 
